@@ -26,12 +26,13 @@ pub fn transform_trusted_new16(
     let output_offset_getter: TypedFunc<(), i32> = i
         .get_typed_func::<(), i32>(&mut s, output_offset_getter_name)
         .map_err(|e| Error::OffsetFuncMissing(format!("Unable to get a offset func: {e}")))?;
-    let main_program: TypedFunc<(), i64> = i
-        .get_typed_func::<(), i64>(&mut s, main_name)
+    let main_program: TypedFunc<(i32, i32, i32), i64> = i
+        .get_typed_func::<(i32, i32, i32), i64>(&mut s, main_name)
         .map_err(|e| Error::MainFuncMissing(format!("Unable to get a main func: {e}")))?;
     let input_offset: i32 = input_offset_getter
         .call(&mut s, ())
         .map_err(|e| Error::UnableToGetOffset(format!("Unable to get offset: {e}")))?;
+    let input_offset4untrusted: i32 = input_offset + 65536;
     let output_offset: i32 = output_offset_getter
         .call(&mut s, ())
         .map_err(|e| Error::UnableToGetOffset(format!("Unable to get offset: {e}")))?;
@@ -54,7 +55,10 @@ pub fn transform_trusted_new16(
                 .map_err(|e| {
                     Error::UnableToCopyInputBytes(format!("writes to memory failed: {e}"))
                 })?;
-            match main_program.call(&mut s, ()) {
+            match main_program.call(
+                &mut s,
+                (input_offset, input_offset4untrusted, output_offset),
+            ) {
                 Ok(0) => Ok(()),
                 Ok(i) => Err(Error::TrustedFuncError(format!(
                     "Main func non-0 exit: {i}"

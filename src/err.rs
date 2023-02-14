@@ -6,6 +6,7 @@ pub enum Error {
     InvalidOffset(String),
     MainFuncMisbehave(String),
     TrustedFuncError(String),
+    UntrustedFuncError(String),
     UnableToGetFunc(String),
     UnableToCallFunc(String),
     UnableToCopyBytes(String),

@@ -99,6 +99,33 @@ where
     }
 }
 
+fn untrusted_new<T, U>(
+    mut s: Store<T>,
+    mem: Memory,
+    input_offset: (i32, usize),
+    output_offset: (i32, usize),
+    main: TypedFunc<(i32, i32), i64>,
+    mut buf: U,
+) -> impl FnMut(U) -> Result<U, Error>
+where
+    U: AsMut<[u8]> + Copy,
+{
+    let o_input2untrusted: usize = input_offset.1;
+    let o_output: usize = output_offset.1;
+    move |mut input2untrusted: U| {
+        host2wasm(&mem, &mut s, o_input2untrusted, input2untrusted.as_mut())?;
+        match main.call(&mut s, (input_offset.0, output_offset.0)) {
+            Ok(0) => Ok(()),
+            Ok(i) => Err(Error::UntrustedFuncError(format!(
+                "Main func non-0 exit: {i}"
+            ))),
+            Err(e) => Err(Error::MainFuncMisbehave(format!("Unexpected error: {e}"))),
+        }?;
+        wasm2host(&mem, &mut s, o_output, buf.as_mut())?;
+        Ok(buf)
+    }
+}
+
 pub fn transform_trusted_new_generic<U>(
     wasm_bytes: &[u8],
     mem_name: &str,
@@ -134,6 +161,42 @@ where
         main_program,
         buf,
         size,
+    ))
+}
+
+pub fn untrusted_new_generic<U>(
+    wasm_bytes: &[u8],
+    mem_name: &str,
+    input_offset_getter_name: &str,
+    output_offset_getter_name: &str,
+    main_name: &str,
+    buf: U,
+) -> Result<impl FnMut(U) -> Result<U, Error>, Error>
+where
+    U: AsMut<[u8]> + Copy,
+{
+    let e: Engine = Engine::default();
+    let m: Module = wasm2module(&e, wasm_bytes)?;
+    let mut s: Store<()> = Store::new(&e, ());
+    let l: Linker<()> = Linker::new(&e);
+    let i: Instance = module2instance(&l, &mut s, &m)?;
+    let mem: Memory = mem_find(&mut s, &i, mem_name)?;
+    let input_offset_getter: TypedFunc<(), i32> =
+        instance2func(&i, &mut s, input_offset_getter_name)?;
+    let output_offset_getter: TypedFunc<(), i32> =
+        instance2func(&i, &mut s, output_offset_getter_name)?;
+    let main_program: TypedFunc<(i32, i32), i64> = instance2func(&i, &mut s, main_name)?;
+    let input_offset: i32 = call(&mut s, &input_offset_getter, ())?;
+    let output_offset: i32 = call(&mut s, &output_offset_getter, ())?;
+    let io_usz: usize = offset_convert(input_offset)?;
+    let oo_usz: usize = offset_convert(output_offset)?;
+    Ok(untrusted_new(
+        s,
+        mem,
+        (input_offset, io_usz),
+        (output_offset, oo_usz),
+        main_program,
+        buf,
     ))
 }
 

@@ -164,9 +164,10 @@ where
     ))
 }
 
-pub fn untrusted_new_generic<U>(
-    wasm_bytes: &[u8],
-    mem_name: &str,
+fn _untrusted_new_generic<U>(
+    mut s: Store<()>,
+    i: Instance,
+    mem: Memory,
     input_offset_getter_name: &str,
     output_offset_getter_name: &str,
     main_name: &str,
@@ -175,12 +176,6 @@ pub fn untrusted_new_generic<U>(
 where
     U: AsMut<[u8]> + Copy,
 {
-    let e: Engine = Engine::default();
-    let m: Module = wasm2module(&e, wasm_bytes)?;
-    let mut s: Store<()> = Store::new(&e, ());
-    let l: Linker<()> = Linker::new(&e);
-    let i: Instance = module2instance(&l, &mut s, &m)?;
-    let mem: Memory = mem_find(&mut s, &i, mem_name)?;
     let input_offset_getter: TypedFunc<(), i32> =
         instance2func(&i, &mut s, input_offset_getter_name)?;
     let output_offset_getter: TypedFunc<(), i32> =
@@ -198,6 +193,34 @@ where
         main_program,
         buf,
     ))
+}
+
+pub fn untrusted_new_generic<U>(
+    wasm_bytes: &[u8],
+    mem_name: &str,
+    input_offset_getter_name: &str,
+    output_offset_getter_name: &str,
+    main_name: &str,
+    buf: U,
+) -> Result<impl FnMut(U) -> Result<U, Error>, Error>
+where
+    U: AsMut<[u8]> + Copy,
+{
+    let e: Engine = Engine::default();
+    let m: Module = wasm2module(&e, wasm_bytes)?;
+    let mut s: Store<()> = Store::new(&e, ());
+    let l: Linker<()> = Linker::new(&e);
+    let i: Instance = module2instance(&l, &mut s, &m)?;
+    let mem: Memory = mem_find(&mut s, &i, mem_name)?;
+    _untrusted_new_generic(
+        s,
+        i,
+        mem,
+        input_offset_getter_name,
+        output_offset_getter_name,
+        main_name,
+        buf,
+    )
 }
 
 pub fn transform_new_with_untrusted<U, T>(

@@ -1,6 +1,6 @@
 use wasmtime::{Engine, Instance, Linker, Memory, Module, Store, TypedFunc};
 
-use crate::{err::Error, transform_new};
+use crate::err::Error;
 
 pub fn wasm2module(e: &Engine, wasm_bytes: &[u8]) -> Result<Module, Error> {
     Module::new(e, wasm_bytes)
@@ -58,4 +58,43 @@ pub fn wasm2host<T>(
 ) -> Result<(), Error> {
     m.read(s, offset, dest)
         .map_err(|e| Error::UnableToCopyFromWasm(format!("Unable to read bytes: {e}")))
+}
+
+pub fn transform_trusted_new<T, U>(
+    mut s: Store<T>,
+    mem: Memory,
+    input_offset: (i32, usize),
+    output_offset: (i32, usize),
+    main: TypedFunc<(i32, i32, i32), i64>,
+    mut buf: U,
+    size: (i32, usize),
+) -> impl FnMut(U, U) -> Result<U, Error>
+where
+    U: AsMut<[u8]> + Copy,
+{
+    let input_offset4untrusted: i32 = input_offset.0 + size.0;
+    let o_input2trusted: usize = input_offset.1;
+    let o_output: usize = output_offset.1;
+    let o_output_from_untrusted: usize = o_input2trusted + size.1;
+    move |mut input2trusted: U, mut output_from_untrusted: U| {
+        host2wasm(&mem, &mut s, o_input2trusted, input2trusted.as_mut())?;
+        host2wasm(
+            &mem,
+            &mut s,
+            o_output_from_untrusted,
+            output_from_untrusted.as_mut(),
+        )?;
+        match main.call(
+            &mut s,
+            (input_offset.0, input_offset4untrusted, output_offset.0),
+        ) {
+            Ok(0) => Ok(()),
+            Ok(i) => Err(Error::TrustedFuncError(format!(
+                "Main func non-0 exit: {i}"
+            ))),
+            Err(e) => Err(Error::MainFuncMisbehave(format!("Unexpected error: {e}"))),
+        }?;
+        wasm2host(&mem, &mut s, o_output, buf.as_mut())?;
+        Ok(buf)
+    }
 }

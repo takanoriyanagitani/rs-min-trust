@@ -4,44 +4,28 @@ use crate::{
     err::Error,
     transform_new,
     wasm::common_wasmtime::{
-        call, host2wasm, instance2func, mem_find, module2instance, offset_convert, wasm2host,
+        call, instance2func, mem_find, module2instance, offset_convert, transform_trusted_new,
         wasm2module,
     },
 };
 
 fn _transform_trusted_new16<T>(
-    mut s: Store<T>,
+    s: Store<T>,
     mem: Memory,
     input_offset: (i32, usize),
     output_offset: (i32, usize),
     main: TypedFunc<(i32, i32, i32), i64>,
-    mut buf: [u8; 65536],
+    buf: [u8; 65536],
 ) -> impl FnMut([u8; 65536], [u8; 65536]) -> Result<[u8; 65536], Error> {
-    let input_offset4untrusted: i32 = input_offset.0 + 65536;
-    let o_input2trusted: usize = input_offset.1;
-    let o_output: usize = output_offset.1;
-    let o_output_from_untrusted: usize = o_input2trusted + 65536;
-    move |input2trusted: [u8; 65536], output_from_untrusted: [u8; 65536]| {
-        host2wasm(&mem, &mut s, o_input2trusted, &input2trusted)?;
-        host2wasm(
-            &mem,
-            &mut s,
-            o_output_from_untrusted,
-            &output_from_untrusted,
-        )?;
-        match main.call(
-            &mut s,
-            (input_offset.0, input_offset4untrusted, output_offset.0),
-        ) {
-            Ok(0) => Ok(()),
-            Ok(i) => Err(Error::TrustedFuncError(format!(
-                "Main func non-0 exit: {i}"
-            ))),
-            Err(e) => Err(Error::MainFuncMisbehave(format!("Unexpected error: {e}"))),
-        }?;
-        wasm2host(&mem, &mut s, o_output, &mut buf)?;
-        Ok(buf)
-    }
+    transform_trusted_new(
+        s,
+        mem,
+        input_offset,
+        output_offset,
+        main,
+        buf,
+        (65536, 65536),
+    )
 }
 
 pub fn transform_trusted_new16(

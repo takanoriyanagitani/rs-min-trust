@@ -63,11 +63,11 @@ fn _transform_trusted_new16<T>(
     main: TypedFunc<(i32, i32, i32), i64>,
     mut buf: [u8; 65536],
 ) -> impl FnMut([u8; 65536], [u8; 65536]) -> Result<[u8; 65536], Error> {
+    let input_offset4untrusted: i32 = input_offset.0 + 65536;
+    let o_input2trusted: usize = input_offset.1;
+    let o_output: usize = output_offset.1;
+    let o_output_from_untrusted: usize = o_input2trusted + 65536;
     move |input2trusted: [u8; 65536], output_from_untrusted: [u8; 65536]| {
-        let input_offset4untrusted: i32 = input_offset.0 + 65536;
-        let o_input2trusted: usize = input_offset.1;
-        let o_output: usize = output_offset.1;
-        let o_output_from_untrusted: usize = o_input2trusted + 65536;
         host2wasm(&mem, &mut s, o_input2trusted, &input2trusted)?;
         host2wasm(
             &mem,

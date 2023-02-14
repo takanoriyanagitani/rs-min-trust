@@ -1,6 +1,6 @@
 use wasmtime::{Engine, Instance, Linker, Memory, Module, Store, TypedFunc};
 
-use crate::err::Error;
+use crate::{err::Error, transform_new};
 
 pub fn wasm2module(e: &Engine, wasm_bytes: &[u8]) -> Result<Module, Error> {
     Module::new(e, wasm_bytes)
@@ -134,5 +134,33 @@ where
         main_program,
         buf,
         size,
+    ))
+}
+
+pub fn transform_new_with_untrusted<U, T>(
+    untrusted: U,
+    wasm_bytes: &[u8],
+    mem_name: &str,
+    input_offset_getter_name: &str,
+    output_offset_getter_name: &str,
+    main_name: &str,
+    size: (i32, usize),
+    buf: T,
+) -> Result<impl FnMut(T, T) -> Result<T, Error>, Error>
+where
+    U: FnMut(T) -> Result<T, Error>,
+    T: AsMut<[u8]> + Copy,
+{
+    Ok(transform_new(
+        transform_trusted_new_generic(
+            wasm_bytes,
+            mem_name,
+            input_offset_getter_name,
+            output_offset_getter_name,
+            main_name,
+            size,
+            buf,
+        )?,
+        untrusted,
     ))
 }

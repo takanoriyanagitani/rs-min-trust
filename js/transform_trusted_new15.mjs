@@ -1,5 +1,7 @@
 import { readFile } from "node:fs/promises"
 
+import { transform_new } from "./transform.mjs"
+
 const PAGE_SIZE = 65536
 
 const FULL_PAGE = PAGE_SIZE
@@ -46,4 +48,25 @@ const transform_trusted_new15 = async (
     return Promise.resolve(transformer)
 }
 
-export { transform_trusted_new15 }
+const transform_new_with_untrusted15 = async (
+    untrusted = (input) => Promise.resolve(new Uint8Array()),
+    wasm_bytes = new Uint8Array(),
+    mem_name = "memory",
+    input_offset_getter_name = "in_buf64k",
+    output_offset_getter_name = "out_buf32k",
+    main_name = "",
+) => {
+    const trusted = await transform_trusted_new15(
+        wasm_bytes,
+        mem_name,
+        input_offset_getter_name,
+        output_offset_getter_name,
+        main_name,
+    )
+    return transform_new(trusted, untrusted)
+}
+
+export {
+    transform_trusted_new15,
+    transform_new_with_untrusted15,
+}

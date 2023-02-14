@@ -98,3 +98,41 @@ where
         Ok(buf)
     }
 }
+
+pub fn transform_trusted_new_generic<U>(
+    wasm_bytes: &[u8],
+    mem_name: &str,
+    input_offset_getter_name: &str,
+    output_offset_getter_name: &str,
+    main_name: &str,
+    size: (i32, usize),
+    buf: U,
+) -> Result<impl FnMut(U, U) -> Result<U, Error>, Error>
+where
+    U: AsMut<[u8]> + Copy,
+{
+    let e: Engine = Engine::default();
+    let m: Module = wasm2module(&e, wasm_bytes)?;
+    let mut s: Store<()> = Store::new(&e, ());
+    let l: Linker<()> = Linker::new(&e);
+    let i: Instance = module2instance(&l, &mut s, &m)?;
+    let mem: Memory = mem_find(&mut s, &i, mem_name)?;
+    let input_offset_getter: TypedFunc<(), i32> =
+        instance2func(&i, &mut s, input_offset_getter_name)?;
+    let output_offset_getter: TypedFunc<(), i32> =
+        instance2func(&i, &mut s, output_offset_getter_name)?;
+    let main_program: TypedFunc<(i32, i32, i32), i64> = instance2func(&i, &mut s, main_name)?;
+    let input_offset: i32 = call(&mut s, &input_offset_getter, ())?;
+    let output_offset: i32 = call(&mut s, &output_offset_getter, ())?;
+    let io_usz: usize = offset_convert(input_offset)?;
+    let oo_usz: usize = offset_convert(output_offset)?;
+    Ok(transform_trusted_new(
+        s,
+        mem,
+        (input_offset, io_usz),
+        (output_offset, oo_usz),
+        main_program,
+        buf,
+        size,
+    ))
+}

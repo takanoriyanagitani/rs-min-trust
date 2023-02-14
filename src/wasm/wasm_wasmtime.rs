@@ -55,6 +55,41 @@ fn wasm2host<T>(m: &Memory, s: &mut Store<T>, offset: usize, dest: &mut [u8]) ->
         .map_err(|e| Error::UnableToCopyFromWasm(format!("Unable to read bytes: {e}")))
 }
 
+fn _transform_trusted_new16<T>(
+    mut s: Store<T>,
+    mem: Memory,
+    input_offset: (i32, usize),
+    output_offset: (i32, usize),
+    main: TypedFunc<(i32, i32, i32), i64>,
+    mut buf: [u8; 65536],
+) -> impl FnMut([u8; 65536], [u8; 65536]) -> Result<[u8; 65536], Error> {
+    move |input2trusted: [u8; 65536], output_from_untrusted: [u8; 65536]| {
+        let input_offset4untrusted: i32 = input_offset.0 + 65536;
+        let o_input2trusted: usize = input_offset.1;
+        let o_output: usize = output_offset.1;
+        let o_output_from_untrusted: usize = o_input2trusted + 65536;
+        host2wasm(&mem, &mut s, o_input2trusted, &input2trusted)?;
+        host2wasm(
+            &mem,
+            &mut s,
+            o_output_from_untrusted,
+            &output_from_untrusted,
+        )?;
+        match main.call(
+            &mut s,
+            (input_offset.0, input_offset4untrusted, output_offset.0),
+        ) {
+            Ok(0) => Ok(()),
+            Ok(i) => Err(Error::TrustedFuncError(format!(
+                "Main func non-0 exit: {i}"
+            ))),
+            Err(e) => Err(Error::MainFuncMisbehave(format!("Unexpected error: {e}"))),
+        }?;
+        wasm2host(&mem, &mut s, o_output, &mut buf)?;
+        Ok(buf)
+    }
+}
+
 pub fn transform_trusted_new16(
     wasm_bytes: &[u8],
     mem_name: &str,
@@ -74,36 +109,18 @@ pub fn transform_trusted_new16(
         instance2func(&i, &mut s, output_offset_getter_name)?;
     let main_program: TypedFunc<(i32, i32, i32), i64> = instance2func(&i, &mut s, main_name)?;
     let input_offset: i32 = call(&mut s, &input_offset_getter, ())?;
-    let input_offset4untrusted: i32 = input_offset + 65536;
     let output_offset: i32 = call(&mut s, &output_offset_getter, ())?;
     let io_usz: usize = offset_convert(input_offset)?;
     let oo_usz: usize = offset_convert(output_offset)?;
-    let mut buf = [0u8; 65536];
-    Ok(
-        move |input2trusted: [u8; 65536], output_from_untrusted: [u8; 65536]| {
-            let o_input2trusted: usize = io_usz;
-            let o_output_from_untrusted: usize = io_usz + 65536;
-            host2wasm(&mem, &mut s, o_input2trusted, &input2trusted)?;
-            host2wasm(
-                &mem,
-                &mut s,
-                o_output_from_untrusted,
-                &output_from_untrusted,
-            )?;
-            match main_program.call(
-                &mut s,
-                (input_offset, input_offset4untrusted, output_offset),
-            ) {
-                Ok(0) => Ok(()),
-                Ok(i) => Err(Error::TrustedFuncError(format!(
-                    "Main func non-0 exit: {i}"
-                ))),
-                Err(e) => Err(Error::MainFuncMisbehave(format!("Unexpected error: {e}"))),
-            }?;
-            wasm2host(&mem, &mut s, oo_usz, &mut buf)?;
-            Ok(buf)
-        },
-    )
+    let buf = [0u8; 65536];
+    Ok(_transform_trusted_new16(
+        s,
+        mem,
+        (input_offset, io_usz),
+        (output_offset, oo_usz),
+        main_program,
+        buf,
+    ))
 }
 
 pub fn transform_new_with_untrusted16<U>(

@@ -11,4 +11,7 @@ pub enum Error {
     UnableToCallFunc(String),
     UnableToCopyBytes(String),
     UnableToCopyFromWasm(String),
+    InvalidFunction(String),
+    UnableToGetBytesFromWasm(String),
+    UnableToCopyBytesToWasm(String),
 }
